@@ -1,17 +1,16 @@
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
+// Group Number: G13
+// Group members: Yanchen Zhang; zhangy38@usc.edu
+//                Mingdi Luo; mingdilu@usc.edu
+//                Yizheng Qiao; yizhengq@usc.edu
 // 
 // Create Date:    23:25:00 02/12/2026 
-// Design Name: 
+// Design Name:    64bit * 32 register_file
 // Module Name:    regfile 
-// Project Name: 
-// Target Devices: 
+// Project Name:   EE533 Lab5
 // Tool versions: 
 // Description: 
-//
-// Dependencies: 
 //
 // Revision: 
 // Revision 0.01 - File Created
