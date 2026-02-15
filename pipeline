@@ -1,0 +1,172 @@
+#!/usr/bin/perl -w
+use lib "/usr/local/netfpga/lib/Perl5";
+use strict;
+
+############################################################
+# Pipeline Register Map (New Address Space 0x20003xx)
+############################################################
+
+# Instruction Memory Registers
+my $PIPE_IMEM_INTERACT_REG     = 0x2000300;
+my $PIPE_IMEM_WRITE_REG        = 0x2000304;
+my $PIPE_IMEM_RW_ADDRESS_REG   = 0x2000308;
+my $PIPE_IMEM_WDATA_REG        = 0x200030c;
+my $PIPE_IMEM_RDATA_REG        = 0x2000324;
+
+# Data Memory Registers
+my $PIPE_DMEM_INTERACT_REG     = 0x2000310;
+my $PIPE_DMEM_WRITE_REG        = 0x2000314;
+my $PIPE_DMEM_RW_ADDRESS_REG   = 0x2000318;
+my $PIPE_DMEM_WDATA_UPPER_REG  = 0x200031c;
+my $PIPE_DMEM_WDATA_LOWER_REG  = 0x2000320;
+my $PIPE_DMEM_RDATA_UPPER_REG  = 0x2000328;
+my $PIPE_DMEM_RDATA_LOWER_REG  = 0x200032c;
+
+############################################################
+# Basic Register Access
+############################################################
+
+sub regwrite {
+    my ($addr, $value) = @_;
+    my $cmd = sprintf("regwrite $addr 0x%08x", $value);
+    my $result = `$cmd`;
+}
+
+sub silent_regwrite {
+    my ($addr, $value) = @_;
+    my $cmd = sprintf("regwrite $addr 0x%08x", $value);
+    my @out = `$cmd 2>&1`;
+    @out = grep { !/found net device: nf2c0/ } @out;
+}
+
+sub regread {
+    my ($addr) = @_;
+    my $cmd = sprintf("regread $addr");
+    my @out = `$cmd`;
+    my $result = $out[0];
+    if ($result =~ m/Reg (0x[0-9a-f]+) \((\d+)\):\s+(0x[0-9a-f]+) \((\d+)\)/) {
+        $result = $3;
+    }
+    return $result;
+}
+
+############################################################
+# Instruction Memory Access
+############################################################
+
+sub read_imem {
+    my ($address) = @_;
+
+    silent_regwrite($PIPE_IMEM_INTERACT_REG, 0x1);
+    silent_regwrite($PIPE_IMEM_WRITE_REG, 0x0);
+    silent_regwrite($PIPE_IMEM_RW_ADDRESS_REG, $address);
+
+    my $rdata = regread($PIPE_IMEM_RDATA_REG);
+    printf("IMEM[%d] = %s\n", $address, $rdata);
+
+    silent_regwrite($PIPE_IMEM_INTERACT_REG, 0x0);
+}
+
+sub write_imem {
+    my ($address, $wdata) = @_;
+
+    silent_regwrite($PIPE_IMEM_INTERACT_REG, 0x1);
+    silent_regwrite($PIPE_IMEM_WRITE_REG, 0x1);
+    silent_regwrite($PIPE_IMEM_RW_ADDRESS_REG, $address);
+    silent_regwrite($PIPE_IMEM_WDATA_REG, $wdata);
+
+    silent_regwrite($PIPE_IMEM_WRITE_REG, 0x0);
+    silent_regwrite($PIPE_IMEM_INTERACT_REG, 0x0);
+
+    printf("Wrote 0x%08x to IMEM[%d]\n", $wdata, $address);
+}
+
+############################################################
+# Data Memory Access (64-bit)
+############################################################
+
+sub read_dmem {
+    my ($address) = @_;
+
+    silent_regwrite($PIPE_DMEM_INTERACT_REG, 0x1);
+    silent_regwrite($PIPE_DMEM_WRITE_REG, 0x0);
+    silent_regwrite($PIPE_DMEM_RW_ADDRESS_REG, $address);
+
+    my $rdata_high = hex(regread($PIPE_DMEM_RDATA_UPPER_REG));
+    my $rdata_low  = hex(regread($PIPE_DMEM_RDATA_LOWER_REG));
+
+    my $rdata_64 = ($rdata_high << 32) | $rdata_low;
+
+    printf("DMEM[%d] = 0x%016x\n", $address, $rdata_64);
+
+    silent_regwrite($PIPE_DMEM_INTERACT_REG, 0x0);
+}
+
+sub write_dmem {
+    my ($address, $wdata) = @_;
+
+    my $upper = ($wdata >> 32) & 0xFFFFFFFF;
+    my $lower = $wdata & 0xFFFFFFFF;
+
+    silent_regwrite($PIPE_DMEM_INTERACT_REG, 0x1);
+    silent_regwrite($PIPE_DMEM_WRITE_REG, 0x1);
+    silent_regwrite($PIPE_DMEM_RW_ADDRESS_REG, $address);
+
+    silent_regwrite($PIPE_DMEM_WDATA_UPPER_REG, $upper);
+    silent_regwrite($PIPE_DMEM_WDATA_LOWER_REG, $lower);
+
+    silent_regwrite($PIPE_DMEM_WRITE_REG, 0x0);
+    silent_regwrite($PIPE_DMEM_INTERACT_REG, 0x0);
+
+    printf("Wrote 0x%016x to DMEM[%d]\n", $wdata, $address);
+}
+
+############################################################
+# Usage
+############################################################
+
+sub usage {
+    print "Usage: pipeline <cmd> <options>\n";
+    print "Commands:\n";
+    print "  read_imem <addr>\n";
+    print "  write_imem <addr> <data>\n";
+    print "  read_dmem <addr>\n";
+    print "  write_dmem <addr> <64bit_data>\n";
+}
+
+############################################################
+# Main
+############################################################
+
+my $numargs = $#ARGV + 1;
+
+if ($numargs < 1) {
+    usage();
+    exit(1);
+}
+
+my $cmd = $ARGV[0];
+
+if ($cmd eq "read_imem") {
+    read_imem($ARGV[1]);
+}
+elsif ($cmd eq "write_imem") {
+    write_imem($ARGV[1], $ARGV[2]);
+}
+elsif ($cmd eq "read_dmem") {
+    read_dmem($ARGV[1]);
+}
+elsif ($cmd eq "write_dmem") {
+    write_dmem($ARGV[1], $ARGV[2]);
+}
+else {
+    print "Unknown command\n";
+    usage();
+    exit(1);
+}
+
+#using methods:
+#./pipeline write_imem 0 0x12345678
+#./pipeline read_imem 0
+#./pipeline write_dmem 4 0x0000000000000064
+#./pipeline read_dmem 4
